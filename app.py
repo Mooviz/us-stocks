@@ -2,11 +2,13 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 st.set_page_config(layout="wide", page_title="Mooviz - Free US Stock Screener")
 
-st.title("🌟 Mooviz: 완전 무료 미국 주식 Finviz 클론 🇺🇸")
-st.markdown("아래 5개 검색창에 티커 입력 (e.g., AAPL, NVDA, TSLA) → 자동으로 데이터 불러와서 비교! 빈 칸 OK ♡")
+st.title("🌟 Mooviz: 완전 무료 미국 주식 Finviz 클론 🇺🇸 (캔들 차트 추가!)")
+st.markdown("아래 5개 검색창에 티커 입력 → 테이블 + 히트맵 + 각 주식별 캔들스틱 차트(Finviz처럼!) ♡")
 
 # 검색창 5개
 col1, col2, col3, col4, col5 = st.columns(5)
@@ -25,7 +27,7 @@ if not tickers:
 st.info(f"입력 티커: {', '.join(tickers)} – 로딩 중...")
 
 @st.cache_data(ttl=300)
-def get_data(tickers):
+def get_summary_data(tickers):
     data = []
     for t in tickers:
         try:
@@ -33,14 +35,12 @@ def get_data(tickers):
             info = tk.info
             hist = tk.history(period="1y")["Close"].dropna()
             
-            # RSI 계산 (표준 공식, 안전하게)
             if len(hist) >= 14:
                 delta = hist.diff()
                 gain = delta.where(delta > 0, 0).rolling(14).mean()
                 loss = -delta.where(delta < 0, 0).rolling(14).mean()
                 rs = gain / loss
-                rs = rs.replace([float('inf')], 100)  # inf 방지
-                rs = rs.fillna(0)
+                rs = rs.replace([float('inf')], 100).fillna(0)
                 rsi = 100 - (100 / (1 + rs)).iloc[-1]
             else:
                 rsi = 50.0
@@ -54,28 +54,23 @@ def get_data(tickers):
                 'Market Cap (B)': round(info.get('marketCap', 0) / 1_000_000_000, 1),
                 'RSI': round(rsi, 2)
             })
-        except Exception:
-            data.append({
-                'Ticker': t,
-                'Price': 'Error',
-                'Change %': 0,
-                'PER': 'N/A',
-                'Volume (M)': 0,
-                'Market Cap (B)': 0,
-                'RSI': 50
-            })
+        except:
+            data.append({'Ticker': t, 'Price': 'Error', 'Change %': 0, 'PER': 'N/A', 'Volume (M)': 0, 'Market Cap (B)': 0, 'RSI': 50})
     return pd.DataFrame(data)
 
-df = get_data(tickers)
+@st.cache_data(ttl=300)
+def get_chart_data(ticker):
+    return yf.download(ticker, period="1y")
 
-# 슬라이더 (기본값 완화해서 데이터 잘 나옴)
+summary_df = get_summary_data(tickers)
+
+# 슬라이더
 c1, c2, c3 = st.columns(3)
-per_max = c1.slider("PER 최대", 0, 1000, 100)
-vol_min = c2.slider("거래량 최소 (백만)", 0, 5000, 0)
-rsi_max = c3.slider("RSI 최대 (과매도 30 추천)", 0, 150, 100)
+per_max = c1.slider("PER 최대", 0, 200, 100)
+vol_min = c2.slider("거래량 최소 (백만)", 0, 500, 0)
+rsi_max = c3.slider("RSI 최대", 0, 100, 100)
 
-# 필터 (PER N/A 제외)
-df_num = df[df['PER'] != 'N/A'].copy()
+df_num = summary_df[summary_df['PER'] != 'N/A'].copy()
 df_num['PER'] = pd.to_numeric(df_num['PER'])
 filtered = df_num[
     (df_num['PER'] <= per_max) &
@@ -84,22 +79,26 @@ filtered = df_num[
 ].sort_values('Change %', ascending=False)
 
 st.subheader(f"입력 {len(tickers)}개 → 필터 통과 {len(filtered)}개")
-st.dataframe(filtered)  # 기본 테이블 (색상 없이 안전하게)
+st.dataframe(filtered)
 
-# 히트맵
 if not filtered.empty:
-    fig = px.treemap(filtered, path=['Ticker'], values='Market Cap (B)',
-                     color='Change %', color_continuous_scale='RdYlGn',
-                     hover_data=['Price', 'PER', 'RSI', 'Volume (M)'])
-    st.plotly_chart(fig, use_container_width=True)
-else:
-    st.info("필터에 맞는 주식 없어요 – 슬라이더 넓혀보세요!")
+    fig_tree = px.treemap(filtered, path=['Ticker'], values='Market Cap (B)', color='Change %', color_continuous_scale='RdYlGn', hover_data=['Price', 'PER', 'RSI'])
+    st.plotly_chart(fig_tree, use_container_width=True)
 
-st.subheader("전체 데이터 (필터 전)")
-st.dataframe(df)
+# 각 티커별 캔들스틱 차트 (Finviz처럼!)
+st.subheader("📈 각 주식 캔들스틱 차트 (최근 1년 + 거래량)")
+for ticker in tickers:
+    with st.expander(f"{ticker} 캔들 차트 (클릭해서 열기)"):
+        chart_data = get_chart_data(ticker)
+        if not chart_data.empty:
+            fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, subplot_titles=(f'{ticker} 가격', '거래량'), row_width=[0.7, 0.3])
+            fig.add_trace(go.Candlestick(x=chart_data.index, open=chart_data['Open'], high=chart_data['High'], low=chart_data['Low'], close=chart_data['Close'], name="캔들"), row=1, col=1)
+            fig.add_trace(go.Bar(x=chart_data.index, y=chart_data['Volume'], name="거래량"), row=2, col=1)
+            fig.update_layout(height=600, title_text=f"{ticker} 캔들스틱 차트 (Finviz 스타일)")
+            fig.update_xaxes(rangeslider_visible=False)
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.error(f"{ticker} 차트 데이터 없음")
 
-st.success("RSI 슬라이더 150으로 하면 다 보여요 ♡")
+st.success("그래프 추가 완성! expander 클릭해서 각 주식 차트 보세요 ♡ Finviz 뺨침!")
 st.balloons()
-
-
-
