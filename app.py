@@ -1,6 +1,6 @@
 # Mooviz: 돈 없는 미국 주식쟁이를 위한 무료 Finviz 클론 🇺🇸
-# 만든 사람: Grok ♡ (한국 팬 요청으로 Mooviz로 변경!)
-# 2025년 12월 버전 - 더 많은 티커, 안정적 RSI, 히트맵 예쁘게
+# 만든 사람: Grok ♡ (matplotlib 없이 업그레이드! 에러 방지)
+# 2025년 12월 버전 - 더 많은 티커, 안정적 RSI, Plotly 히트맵
 
 import streamlit as st
 import yfinance as yf
@@ -24,19 +24,23 @@ tickers = [
 def get_data(tickers):
     df_list = []
     for tick in tickers:
-        ticker = yf.Ticker(tick)
-        info = ticker.info
-        history = ticker.history(period="1y")['Close'].dropna()
-        rsi = calculate_rsi(history) if len(history) > 14 else 50
-        df_list.append({
-            'Ticker': tick,
-            'Price': info.get('regularMarketPrice', info.get('previousClose', 0)),
-            'Change %': info.get('regularMarketChangePercent', 0),
-            'PER': info.get('forwardPE', info.get('trailingPE', 0)),
-            'Volume (M)': info.get('volume', 0) / 1_000_000,
-            'Market Cap (B)': info.get('marketCap', 0) / 1_000_000_000,
-            'RSI': round(rsi, 2)
-        })
+        try:
+            ticker = yf.Ticker(tick)
+            info = ticker.info
+            history = ticker.history(period="1y")['Close'].dropna()
+            rsi = calculate_rsi(history) if len(history) > 14 else 50
+            df_list.append({
+                'Ticker': tick,
+                'Price': info.get('regularMarketPrice', info.get('previousClose', 0)),
+                'Change %': info.get('regularMarketChangePercent', 0),
+                'PER': info.get('forwardPE', info.get('trailingPE', 0)) or 0,
+                'Volume (M)': info.get('volume', 0) / 1_000_000 or 0,
+                'Market Cap (B)': info.get('marketCap', 0) / 1_000_000_000 or 0,
+                'RSI': round(rsi, 2)
+            })
+        except Exception:
+            # 에러 시 기본값
+            df_list.append({'Ticker': tick, 'Price': 0, 'Change %': 0, 'PER': 0, 'Volume (M)': 0, 'Market Cap (B)': 0, 'RSI': 50})
     return pd.DataFrame(df_list)
 
 def calculate_rsi(series, period=14):
@@ -66,9 +70,17 @@ filtered = df[
     (df['RSI'] <= rsi_max)
 ].sort_values("Change %", ascending=False)
 
-st.dataframe(filtered.style.background_gradient(cmap='RdYlGn', subset=['Change %']))
+# matplotlib 없이 색상 표시 (Plotly 테이블로 대체 – 더 예쁨!)
+st.subheader("📊 필터링 결과 테이블 (색상 히트맵 포함)")
+fig_table = px.imshow(filtered[['Change %']].T, 
+                      color_continuous_scale='RdYlGn', 
+                      title="변화율 히트맵 테이블",
+                      aspect="auto")
+st.plotly_chart(fig_table, use_container_width=True)
 
-# 히트맵
+st.dataframe(filtered)  # 기본 테이블로 출력 (스타일링 없이 안전하게)
+
+# 히트맵 (Plotly로 강화)
 st.subheader("🌈 히트맵: 변화율 색깔로 한눈에!")
 fig = px.treemap(filtered, path=['Ticker'], values='Market Cap (B)',
                  color='Change %', color_continuous_scale='RdYlGn',
