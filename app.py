@@ -98,6 +98,7 @@ else:
 st.subheader("전체 데이터 (필터 전)")
 st.dataframe(df)
 
-st.success("완벽 고침! 이제 TSLA도 제대로 나와요. RSI 슬라이더 150으로 하면 다 보여요 ♡")
+st.success(RSI 슬라이더 150으로 하면 다 보여요 ♡")
 st.balloons()
+
 
