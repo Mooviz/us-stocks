@@ -1,12 +1,12 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import plotly.graph_objects as go
+import plotly.express as px
 
-st.set_page_config(layout="wide", page_title="Mooviz - Finviz Intraday")
+st.set_page_config(layout="wide", page_title="Mooviz - Free US Stock Screener")
 
-st.title("🌟 Mooviz: Finviz 당일 그래프 클론 🇺🇸")
-st.markdown("아래 5개 검색창에 티커 입력 → Finviz처럼 당일 캔들 그래프 + 변화율 + 상대적 거래량 바로 보여줘요 ♡")
+st.title("🌟 Mooviz: 완전 무료 미국 주식 Finviz 클론 🇺🇸")
+st.markdown("아래 5개 검색창에 티커 입력 (e.g., AAPL, NVDA, TSLA) → 자동으로 데이터 불러와서 비교! 빈 칸 OK ♡")
 
 # 검색창 5개
 col1, col2, col3, col4, col5 = st.columns(5)
@@ -22,66 +22,81 @@ if not tickers:
     st.warning("티커 하나 이상 입력해주세요!")
     st.stop()
 
-st.info(f"입력 티커: {', '.join(tickers)} – 당일 데이터 로딩 중...")
+st.info(f"입력 티커: {', '.join(tickers)} – 로딩 중...")
 
-@st.cache_data(ttl=60)  # 1분마다 업데이트
-def get_intraday_data(ticker):
-    # 당일 1분봉 데이터 (미국 시장 시간에만 동작)
-    data = yf.download(ticker, period="1d", interval="1m", progress=False)
-    if data.empty:
-        return None, None, None
-    # 변화율 계산
-    change_pct = round((data['Close'].iloc[-1] / data['Open'].iloc[0] - 1) * 100, 2)
-    change_val = round(data['Close'].iloc[-1] - data['Open'].iloc[0], 2)
-    current_price = round(data['Close'].iloc[-1], 2)
-    return data, change_pct, change_val, current_price
+@st.cache_data(ttl=300)
+def get_data(tickers):
+    data = []
+    for t in tickers:
+        try:
+            tk = yf.Ticker(t)
+            info = tk.info
+            hist = tk.history(period="1y")["Close"].dropna()
+            
+            # RSI 계산 (표준 공식, 안전하게)
+            if len(hist) >= 14:
+                delta = hist.diff()
+                gain = delta.where(delta > 0, 0).rolling(14).mean()
+                loss = -delta.where(delta < 0, 0).rolling(14).mean()
+                rs = gain / loss
+                rs = rs.replace([float('inf')], 100)  # inf 방지
+                rs = rs.fillna(0)
+                rsi = 100 - (100 / (1 + rs)).iloc[-1]
+            else:
+                rsi = 50.0
+            
+            data.append({
+                'Ticker': t,
+                'Price': round(info.get('regularMarketPrice', info.get('previousClose', 0)), 2),
+                'Change %': round(info.get('regularMarketChangePercent', 0), 2),
+                'PER': round(info.get('forwardPE', info.get('trailingPE', 0)), 2) if info.get('forwardPE') or info.get('trailingPE') else 'N/A',
+                'Volume (M)': round(info.get('volume', 0) / 1_000_000, 1),
+                'Market Cap (B)': round(info.get('marketCap', 0) / 1_000_000_000, 1),
+                'RSI': round(rsi, 2)
+            })
+        except Exception:
+            data.append({
+                'Ticker': t,
+                'Price': 'Error',
+                'Change %': 0,
+                'PER': 'N/A',
+                'Volume (M)': 0,
+                'Market Cap (B)': 0,
+                'RSI': 50
+            })
+    return pd.DataFrame(data)
 
-# 각 티커별 당일 그래프 (Finviz 스타일)
-for ticker in tickers:
-    with st.expander(f"{ticker} 당일 그래프 (Finviz 스타일 – 클릭해서 보기)"):
-        result = get_intraday_data(ticker)
-        if result[0] is None:
-            st.error(f"{ticker} – 미국 시장 미개장 또는 데이터 없음 (한국 시간 새벽 11:30~새벽 6:00에 확인)")
-            continue
-        
-        data, change_pct, change_val, current_price = result
-        
-        # Finviz 스타일 그래프 (거래량 제거, 빨간선 = 전일 종가)
-        fig = go.Figure()
-        
-        # 캔들스틱
-        fig.add_trace(go.Candlestick(
-            x=data.index,
-            open=data['Open'],
-            high=data['High'],
-            low=data['Low'],
-            close=data['Close'],
-            name=ticker
-        ))
-        
-        # 빨간 저항선 (전일 종가)
-        prev_close = data['Close'].iloc[-1] if len(data) > 0 else 0
-        fig.add_hline(y=prev_close, line_color="red", line_dash="dash", annotation_text="저항선")
-        
-        # 제목에 변화율 표시 (업로드 이미지처럼)
-        title_text = f"{ticker}   {change_val:+.2f} ({change_pct:+.2f}%)"
-        fig.update_layout(
-            title=title_text,
-            title_x=0.5,
-            xaxis_title="시간",
-            yaxis_title="가격",
-            height=600,
-            xaxis_rangeslider_visible=False,
-            template="plotly_dark"
-        )
-        
-        # x축 시간 표시 (10AM, 11AM 등)
-        fig.update_xaxes(
-            tickformat="%I%p",
-            tickangle=0
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
+df = get_data(tickers)
 
-st.success("완성! 업로드한 이미지처럼 당일 캔들 + 변화율 제목 + 빨간 저항선 나와요. 미국 시장 시간에 확인하세요 ♡")
+# 슬라이더 (기본값 완화해서 데이터 잘 나옴)
+c1, c2, c3 = st.columns(3)
+per_max = c1.slider("PER 최대", 0, 1500, 100)
+vol_min = c2.slider("거래량 최소 (백만)", 0, 50000, 0)
+rsi_max = c3.slider("RSI 최대 (과매도 30 추천)", 0, 150, 100)
+
+# 필터 (PER N/A 제외)
+df_num = df[df['PER'] != 'N/A'].copy()
+df_num['PER'] = pd.to_numeric(df_num['PER'])
+filtered = df_num[
+    (df_num['PER'] <= per_max) &
+    (df_num['Volume (M)'] >= vol_min) &
+    (df_num['RSI'] <= rsi_max)
+].sort_values('Change %', ascending=False)
+
+st.subheader(f"입력 {len(tickers)}개 → 필터 통과 {len(filtered)}개")
+st.dataframe(filtered)  # 기본 테이블 (색상 없이 안전하게)
+
+# 히트맵
+if not filtered.empty:
+    fig = px.treemap(filtered, path=['Ticker'], values='Market Cap (B)',
+                     color='Change %', color_continuous_scale='RdYlGn',
+                     hover_data=['Price', 'PER', 'RSI', 'Volume (M)'])
+    st.plotly_chart(fig, use_container_width=True)
+else:
+    st.info("필터에 맞는 주식 없어요 – 슬라이더 넓혀보세요!")
+
+st.subheader("전체 데이터 (필터 전)")
+st.dataframe(df)
+
+st.success("RSI 슬라이더 100으로 하면 다 보여요 ♡")
 st.balloons()
