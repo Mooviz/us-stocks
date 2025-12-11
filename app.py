@@ -1,91 +1,65 @@
-# Mooviz: 돈 없는 미국 주식쟁이를 위한 무료 Finviz 클론 🇺🇸
-# 만든 사람: Grok ♡ (matplotlib 없이 업그레이드! 에러 방지)
-# 2025년 12월 버전 - 더 많은 티커, 안정적 RSI, Plotly 히트맵
-
 import streamlit as st
 import yfinance as yf
 import pandas as pd
 import plotly.express as px
-from datetime import datetime
 
-st.set_page_config(layout="wide", page_title="Mooviz - Free US Stock Screener")
+st.set_page_config(layout="wide", page_title="Mooviz")
 
-st.title("🌟 Mooviz: 완전 무료 미국 주식 Finviz 클론 🇺🇸")
-st.markdown("PER 낮은 주식, 거래량 많은 주식, RSI 과매도 주식 바로 찾아보세요! 티커 추가만 하면 무한 확장 가능 ♡")
+st.title("🌟 Mooviz – 당신만의 미국 주식 Finviz")
+st.markdown("아래 5개 검색창에 원하는 티커를 입력하세요 (예: AAPL NVDA TSLA) → 자동으로 비교해줍니다!")
 
-# 더 많은 미국 인기 주식 티커 (S&P500 대표 + 테크/ETF)
-tickers = [
-    "AAPL", "MSFT", "NVDA", "TSLA", "AMZN", "GOOGL", "META", "BRK-B", "LLY", "JPM",
-    "AMD", "NFLX", "ADBE", "CRM", "INTC", "PYPL", "DIS", "KO", "PFE", "XOM",
-    "SOXL", "TQQQ", "SPY", "QQQ", "VOO"  # 추가 ETF/레버리지
-]
+# ← 여기부터가 검색창 5개
+col1, col2, col3, col4, col5 = st.columns(5)
+t1 = col1.text_input("티커 1", "AAPL").upper().strip()
+t2 = col2.text_input("티커 2", "NVDA").upper().strip()
+t3 = col3.text_input("티커 3", "TSLA").upper().strip()
+t4 = col4.text_input("티커 4", "").upper().strip()
+t5 = col5.text_input("티커 5", "").upper().strip()
 
-@st.cache_data(ttl=300)  # 5분마다 업데이트
+tickers = [t for t in [t1, t2, t3, t4, t5] if t]  # 빈칸 제거
+
+if not tickers:
+    st.stop()
+
+@st.cache_data(ttl=180)
 def get_data(tickers):
-    df_list = []
-    for tick in tickers:
+    data = []
+    for t in tickers:
         try:
-            ticker = yf.Ticker(tick)
-            info = ticker.info
-            history = ticker.history(period="1y")['Close'].dropna()
-            rsi = calculate_rsi(history) if len(history) > 14 else 50
-            df_list.append({
-                'Ticker': tick,
-                'Price': info.get('regularMarketPrice', info.get('previousClose', 0)),
-                'Change %': info.get('regularMarketChangePercent', 0),
-                'PER': info.get('forwardPE', info.get('trailingPE', 0)) or 0,
-                'Volume (M)': info.get('volume', 0) / 1_000_000 or 0,
-                'Market Cap (B)': info.get('marketCap', 0) / 1_000_000_000 or 0,
-                'RSI': round(rsi, 2)
+            tk = yf.Ticker(t)
+            info = tk.info
+            hist = tk.history(period="1y")["Close"]
+            rsi = 50 if len(hist)<20 else round((hist.pct_change().dropna() > 0).rolling(14).mean().iloc[-1] * 100, 1)
+            data.append({
+                "Ticker": t,
+                "가격": info.get("regularMarketPrice", info.get("previousClose", 0)),
+                "변화율": info.get("regularMarketChangePercent", 0),
+                "PER": info.get("forwardPE") or info.get("trailingPE", "-"),
+                "거래량(M)": round(info.get("volume",0)/1_000_000, 1),
+                "시총(B)": round(info.get("marketCap",0)/1_000_000_000, 1),
+                "RSI": rsi
             })
-        except Exception:
-            # 에러 시 기본값
-            df_list.append({'Ticker': tick, 'Price': 0, 'Change %': 0, 'PER': 0, 'Volume (M)': 0, 'Market Cap (B)': 0, 'RSI': 50})
-    return pd.DataFrame(df_list)
+        except:
+            data.append({"Ticker": t, "가격": "에러", "변화율": 0, "PER": "-", "거래량(M)": 0, "시총(B)": 0, "RSI": "-"})
+    return pd.DataFrame(data)
 
-def calculate_rsi(series, period=14):
-    delta = series.diff()
-    gain = delta.where(delta > 0, 0).rolling(window=period).mean()
-    loss = -delta.where(delta < 0, 0).rolling(window=period).mean()
-    rs = gain / loss.replace(0, float('inf'))
-    rsi = 100 - (100 / (1 + rs))
-    return rsi.iloc[-1] if not rsi.empty else 50
-
-# 데이터 불러오기
 df = get_data(tickers)
 
-# 스크리너
-st.subheader("🔍 스크리너: 조건으로 필터링 (Finviz처럼!)")
-col1, col2, col3 = st.columns(3)
-with col1:
-    per_max = st.slider("PER 최대", 0, 100, 25)
-with col2:
-    volume_min = st.slider("거래량 최소 (백만)", 0, 500, 10)
-with col3:
-    rsi_max = st.slider("RSI 최대 (과매도: 30 이하 추천)", 0, 100, 40)
+# 필터 슬라이더
+c1, c2, c3 = st.columns(3)
+per = c1.slider("PER 최대", 0, 100, 30)
+vol = c2.slider("거래량 최소 (백만)", 0, 500, 5)
+rsi = c3.slider("RSI 최대", 0, 100, 70)
 
-filtered = df[
-    (df['PER'] <= per_max) &
-    (df['Volume (M)'] >= volume_min) &
-    (df['RSI'] <= rsi_max)
-].sort_values("Change %", ascending=False)
+filtered = df[(df["PER"] != "-") & (df["PER"] <= per) & (df["거래량(M)"] >= vol) & (df["RSI"] <= rsi)]
 
-# matplotlib 없이 색상 표시 (Plotly 테이블로 대체 – 더 예쁨!)
-st.subheader("📊 필터링 결과 테이블 (색상 히트맵 포함)")
-fig_table = px.imshow(filtered[['Change %']].T, 
-                      color_continuous_scale='RdYlGn', 
-                      title="변화율 히트맵 테이블",
-                      aspect="auto")
-st.plotly_chart(fig_table, use_container_width=True)
+st.subheader(f"입력 티커 {len(tickers)}개 → 필터 통과 {len(filtered)}개")
+st.dataframe(filtered.style.background_gradient(cmap="RdYlGn", subset=["변화율"]))
 
-st.dataframe(filtered)  # 기본 테이블로 출력 (스타일링 없이 안전하게)
-
-# 히트맵 (Plotly로 강화)
-st.subheader("🌈 히트맵: 변화율 색깔로 한눈에!")
-fig = px.treemap(filtered, path=['Ticker'], values='Market Cap (B)',
-                 color='Change %', color_continuous_scale='RdYlGn',
-                 hover_data=['Price', 'PER', 'RSI'])
+# 히트맵
+fig = px.treemap(filtered, path=["Ticker"], values="시총(B)", color="변화율",
+                 color_continuous_scale="RdYlGn", hover_data=["가격","PER","RSI"])
 st.plotly_chart(fig, use_container_width=True)
 
-st.success("Mooviz 완성! 티커 더 추가하려면 코드 상단 tickers 리스트에 '새티커' 넣으세요. (e.g., 'PLTR') ♡")
+st.success("완성! 검색창에 원하는 티커 넣고 엔터 치기만 하면 돼요 ♡")
 st.balloons()
