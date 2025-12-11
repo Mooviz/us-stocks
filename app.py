@@ -98,7 +98,8 @@ else:
 st.subheader("전체 데이터 (필터 전)")
 st.dataframe(df)
 
-st.success(RSI 슬라이더 150으로 하면 다 보여요 ♡")
+st.success("RSI 슬라이더 150으로 하면 다 보여요 ♡")
 st.balloons()
+
 
 
