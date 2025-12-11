@@ -95,3 +95,16 @@ st.dataframe(df.style.background_gradient(cmap='RdYlGn', subset=['Change %']))
 
 st.success("고침! 이제 PER 50, 거래량 1M, RSI 80 기본으로 데이터 잘 나와요. 슬라이더 조정해보세요 ♡")
 st.balloons()
+
+# ... (위 코드 그대로, 데이터 부분만 약간 수정)
+data.append({
+    'Ticker': t,
+    'Price': f"${info.get('regularMarketPrice', info.get('previousClose', 0)):.2f}",
+    'Change %': f"{info.get('regularMarketChangePercent', 0):.2f}%",
+    'PER': f"{info.get('forwardPE', info.get('trailingPE', 0)):.2f}" if info.get('forwardPE') or info.get('trailingPE') else 'N/A',
+    'Volume (M)': f"{info.get('volume', 0) / 1_000_000:.1f}",
+    'Market Cap (B)': f"{info.get('marketCap', 0) / 1_000_000_000:.1f}",
+    'RSI': f"{rsi:.2f}"
+})
+# 테이블 표시
+st.dataframe(filtered)  # style 제거하거나 간단히
