@@ -70,9 +70,9 @@ df = get_data(tickers)
 
 # 슬라이더 (기본값 완화해서 데이터 잘 나옴)
 c1, c2, c3 = st.columns(3)
-per_max = c1.slider("PER 최대", 0, 200, 100)
-vol_min = c2.slider("거래량 최소 (백만)", 0, 500, 0)
-rsi_max = c3.slider("RSI 최대 (과매도 30 추천)", 0, 100, 100)
+per_max = c1.slider("PER 최대", 0, 1000, 100)
+vol_min = c2.slider("거래량 최소 (백만)", 0, 5000, 0)
+rsi_max = c3.slider("RSI 최대 (과매도 30 추천)", 0, 150, 100)
 
 # 필터 (PER N/A 제외)
 df_num = df[df['PER'] != 'N/A'].copy()
@@ -98,5 +98,6 @@ else:
 st.subheader("전체 데이터 (필터 전)")
 st.dataframe(df)
 
-st.success("완벽 고침! 이제 TSLA도 제대로 나와요. RSI 슬라이더 100으로 하면 다 보여요 ♡")
+st.success("완벽 고침! 이제 TSLA도 제대로 나와요. RSI 슬라이더 150으로 하면 다 보여요 ♡")
 st.balloons()
+
