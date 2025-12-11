@@ -7,8 +7,8 @@ from plotly.subplots import make_subplots
 
 st.set_page_config(layout="wide", page_title="Mooviz - Free US Stock Screener")
 
-st.title("🌟 Mooviz: 완전 무료 미국 주식 Finviz 클론 🇺🇸 (캔들 차트 추가!)")
-st.markdown("아래 5개 검색창에 티커 입력 → 테이블 + 히트맵 + 각 주식별 캔들스틱 차트(Finviz처럼!) ♡")
+st.title("🌟 Mooviz: 완전 무료 미국 주식 Finviz 클론 🇺🇸 (캔들 차트 완벽 고침!)")
+st.markdown("아래 5개 검색창에 티커 입력 → 테이블 + 히트맵 + 각 주식별 Finviz 스타일 캔들 차트 ♡")
 
 # 검색창 5개
 col1, col2, col3, col4, col5 = st.columns(5)
@@ -59,8 +59,8 @@ def get_summary_data(tickers):
     return pd.DataFrame(data)
 
 @st.cache_data(ttl=300)
-def get_chart_data(ticker):
-    return yf.download(ticker, period="1y")
+def get_full_data(ticker):
+    return yf.download(ticker, period="1y", progress=False)
 
 summary_df = get_summary_data(tickers)
 
@@ -85,20 +85,26 @@ if not filtered.empty:
     fig_tree = px.treemap(filtered, path=['Ticker'], values='Market Cap (B)', color='Change %', color_continuous_scale='RdYlGn', hover_data=['Price', 'PER', 'RSI'])
     st.plotly_chart(fig_tree, use_container_width=True)
 
-# 각 티커별 캔들스틱 차트 (Finviz처럼!)
-st.subheader("📈 각 주식 캔들스틱 차트 (최근 1년 + 거래량)")
+# 캔들 차트 섹션 (expander 안에서 버그 피하기 위해 height 고정 + use_container_width)
+st.subheader("📈 각 주식 캔들스틱 차트 (Finviz 스타일 – 클릭해서 확대!)")
 for ticker in tickers:
-    with st.expander(f"{ticker} 캔들 차트 (클릭해서 열기)"):
-        chart_data = get_chart_data(ticker)
-        if not chart_data.empty:
-            fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, subplot_titles=(f'{ticker} 가격', '거래량'), row_width=[0.7, 0.3])
-            fig.add_trace(go.Candlestick(x=chart_data.index, open=chart_data['Open'], high=chart_data['High'], low=chart_data['Low'], close=chart_data['Close'], name="캔들"), row=1, col=1)
-            fig.add_trace(go.Bar(x=chart_data.index, y=chart_data['Volume'], name="거래량"), row=2, col=1)
-            fig.update_layout(height=600, title_text=f"{ticker} 캔들스틱 차트 (Finviz 스타일)")
-            fig.update_xaxes(rangeslider_visible=False)
+    with st.expander(f"{ticker} 캔들 차트 (최근 1년 + 거래량 – 클릭해서 열기)"):
+        full_data = get_full_data(ticker)
+        if not full_data.empty:
+            fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, subplot_titles=(f'{ticker} 가격', '거래량'), row_heights=[0.7, 0.3])
+            fig.add_trace(go.Candlestick(x=full_data.index,
+                                         open=full_data['Open'],
+                                         high=full_data['High'],
+                                         low=full_data['Low'],
+                                         close=full_data['Close'],
+                                         name="캔들"), row=1, col=1)
+            fig.add_trace(go.Bar(x=full_data.index, y=full_data['Volume'], name="거래량", marker_color='lightblue'), row=2, col=1)
+            fig.update_layout(height=700, xaxis_rangeslider_visible=False, title_text=f"{ticker} Finviz 스타일 차트")
+            fig.update_yaxes(title_text="가격", row=1, col=1)
+            fig.update_yaxes(title_text="거래량", row=2, col=1)
             st.plotly_chart(fig, use_container_width=True)
         else:
-            st.error(f"{ticker} 차트 데이터 없음")
+            st.error(f"{ticker} 차트 데이터 로드 실패 – 나중에 다시 시도!")
 
-st.success("그래프 추가 완성! expander 클릭해서 각 주식 차트 보세요 ♡ Finviz 뺨침!")
+st.success("그래프 완벽 고침! expander 열고 마우스로 확대/이동 해보세요. Finviz 그대로예요 ♡")
 st.balloons()
